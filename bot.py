@@ -46,15 +46,13 @@ async def start_handler(client, message):
             quote=True
         )
 
-    # Animated Sticker Logic
     sticker = await message.reply_sticker(
-        "CAACAgIAAxkBAAEQZtFpgEdROhGouBVFD3e0K-YjmVHwsgACtCMAAphLKUjeub7NKlvk2TgE",
+        "CAACAgQAAxkBAAEQqAVppTbJHAjruWesm0z6g7MZOPQjLQACUAEAAqghIQaxvfG1zemEojoE",
         quote=True
     )
     await asyncio.sleep(2)
     await sticker.delete()
 
-    # Welcome Image as Reply
     img_url = f"{random.choice(Config.PICS_URL)}?r={get_random_mix_id()}"
     await message.reply_photo(
         photo=img_url,
@@ -84,11 +82,10 @@ async def info_handler(client, message):
     else:
         await message.reply_text(info_caption, quote=True)
 
-# --- DOWNLOADER (Fully Free) ---
+# --- DOWNLOADER ---
 
 @app.on_message(filters.regex(r'http') & filters.private)
 async def dl_handler(client, message):
-    # Ensure user is subscribed to required channels
     if not await is_subscribed(client, message.from_user.id):
         return await message.reply_text(
             "⚠️ **Access Denied!**\nPlease join our channels to use this bot.",
@@ -96,20 +93,41 @@ async def dl_handler(client, message):
             quote=True
         )
 
+    url = message.text.strip()
+
+    # Detect if user wants MP3 (they can send url + "mp3" or "/mp3")
+    mode = 'mp3' if 'mp3' in url.lower() else 'video'
+    # Strip any mode keyword from url if present
+    url = url.replace('mp3', '').replace('MP3', '').strip()
+
     status = await message.reply_text("🔎 **Processing link...**", quote=True)
+
+    file_path = None
     try:
-        file_path = await download_media(message.text)
+        file_path = await download_media(url, mode=mode)
         await status.edit("📤 **Uploading to Telegram...**")
-        await message.reply_document(file_path, quote=True)
-        
-        # Log usage in database for stats only (no limits applied)
+
+        if mode == 'mp3':
+            await message.reply_audio(
+                audio=file_path,
+                quote=True
+            )
+        else:
+            await message.reply_video(
+                video=file_path,
+                quote=True
+            )
+
         await update_usage(message.from_user.id)
-        
-        if os.path.exists(file_path):
-            os.remove(file_path)
         await status.delete()
+
     except Exception as e:
         await status.edit(f"❌ **Error:** `{e}`")
+
+    finally:
+        # Always clean up the downloaded file
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
 
 # --- ADMIN COMMANDS ---
 
@@ -140,7 +158,7 @@ async def broadcast_handler(client, message):
             success += 1
         except Exception:
             failed += 1
-        await asyncio.sleep(0.3) # Prevent FloodWait
+        await asyncio.sleep(0.3)
     
     await progress.edit(f"✅ **Broadcast Done!**\n\nSuccess: `{success}`\nFailed: `{failed}`")
 
