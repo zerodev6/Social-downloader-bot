@@ -11,6 +11,10 @@ from database import add_user, get_user, update_usage, get_total_users, get_all_
 from utils import get_greeting, get_random_mix_id, is_subscribed, get_subscribe_buttons, START_BTNS, ABOUT_BTNS
 from downloader import download_media
 
+# --- CONFIGURATION ---
+# List of emojis for the auto-reaction feature
+AUTO_REACTIONS = ["🔥", "👍", "❤️", "⚡", "✨", "💯", "🤩", "💙"]
+
 # --- HEALTH CHECK FOR KOYEB ---
 async def handle_health(request):
     return web.Response(text="ZeroDev Bot is Online 🚀")
@@ -31,6 +35,15 @@ app = Client(
     bot_token=Config.BOT_TOKEN,
     parse_mode=enums.ParseMode.HTML
 )
+
+# --- AUTO REACTION HANDLER ---
+# This will react to every incoming private message that isn't from a bot
+@app.on_message(filters.incoming & filters.private & ~filters.bot, group=-1)
+async def auto_reaction_handler(client, message):
+    try:
+        await message.react(random.choice(AUTO_REACTIONS))
+    except Exception:
+        pass  # Ignore if reactions are restricted or user blocked the bot
 
 # --- USER COMMANDS ---
 
@@ -93,6 +106,12 @@ async def dl_handler(client, message):
             quote=True
         )
 
+    # Specific reaction for link processing
+    try:
+        await message.react("⏳")
+    except:
+        pass
+
     url = message.text.strip()
 
     # Detect if user wants MP3 (they can send url + "mp3" or "/mp3")
@@ -120,9 +139,19 @@ async def dl_handler(client, message):
 
         await update_usage(message.from_user.id)
         await status.delete()
+        
+        # Success reaction
+        try:
+            await message.react("✅")
+        except:
+            pass
 
     except Exception as e:
         await status.edit(f"❌ **Error:** `{e}`")
+        try:
+            await message.react("⚠️")
+        except:
+            pass
 
     finally:
         # Always clean up the downloaded file
