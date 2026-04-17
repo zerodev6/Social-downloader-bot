@@ -1,102 +1,73 @@
 import yt_dlp
-import asyncio
 import os
+import asyncio
 
-async def download_media(url, download_type='video'):
+async def download_media(url, mode='video'):
     """
-    Downloads media from Instagram, TikTok, YouTube, etc.
-    download_type can be 'video' or 'mp3'
+    Downloads Reels, Posts, and Videos from Instagram/TikTok/YouTube.
+    :param url: The media URL
+    :param mode: 'video' for MP4 or 'mp3' for Audio
+    :return: Dictionary containing metadata and the binary file path
     """
     
-    # 1. Ensure downloads directory exists
+    # Ensure the downloads folder exists
     os.makedirs('downloads', exist_ok=True)
 
-    # 2. Check for cookies file to bypass bot protection
-    if not os.path.exists('cookies.txt'):
-        print("⚠️ Warning: cookies.txt not found! Create this file to bypass Instagram/TikTok logins.")
-
     ydl_opts = {
-        'cookiefile': 'cookies.txt', # Reads cookies to authenticate
+        # 1. AUTHENTICATION: Essential for Instagram/TikTok blocks
+        # Place your exported cookies.txt in the same folder as this script
+        'cookiefile': 'cookies.txt', 
+        
         'quiet': True,
         'no_warnings': True,
+        'nocheckcertificate': True,
+        'geo_bypass': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'referer': 'https://www.google.com/',
+        
+        # 2. OUTPUT & FORMAT
         'outtmpl': 'downloads/%(title)s.%(ext)s',
-        
-        # Determine format based on user request
-        'format': 'bestvideo+bestaudio/best' if download_type == 'video' else 'bestaudio/best',
-        
-        # Convert to mp3 if requested
-        'postprocessors': [{
+        'format': 'bestvideo+bestaudio/best' if mode == 'video' else 'bestaudio/best',
+    }
+
+    # 3. MP3 CONVERSION LOGIC
+    if mode == 'mp3':
+        ydl_opts['postprocessors'] = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
-        }] if download_type == 'mp3' else [],
+        }]
 
-        # Spoof headers
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/123.0.0.0 Safari/537.36',
-        'referer': 'https://www.google.com/',
-        'geo_bypass': True,
-    }
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            # Extract info and download
-            info = ydl.extract_info(url, download=True)
-            
-            # Important: If it's an MP3, yt-dlp changes the extension AFTER downloading.
-            # We need to get the exact final filename.
-            filename = ydl.prepare_filename(info)
-            if download_type == 'mp3':
-                filename = filename.rsplit('.', 1)[0] + '.mp3'
-
-            metadata = {
-                "title": info.get('title', 'Unknown Title'),
-                "author": info.get('uploader', 'Unknown Author'),
-                "filename": filename
-            }
-            
-            return metadata
-            
-        except Exception as e:
-            return {"error": str(e)}
-
-# ==========================================
-# HOW TO FIX YOUR BOT ERROR (The Crucial Part)
-# ==========================================
-
-async def main():
-    test_url = "YOUR_LINK_HERE" # Put a TikTok or Insta link here
-    
-    # 1. Get the downloaded file data
-    result = await download_media(test_url, 'video')
-    
-    if "error" in result:
-        print(f"Failed to download: {result['error']}")
-        return
-
-    filepath = result["filename"]
-    print(f"Successfully downloaded: {filepath}")
-
-    # 2. THE FIX FOR YOUR ERROR:
-    # You MUST open the file using 'rb' (read binary) before sending it via a bot.
+    # Running the extraction in a thread to keep it async-friendly
+    loop = asyncio.get_event_loop()
     
     try:
-        with open(filepath, 'rb') as binary_file:
-            print("File successfully opened in binary mode. It is ready to send!")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Extract info and download
+            info = await loop.run_in_executor(None, lambda: ydl.extract_info(url, download=True))
             
-            # Example for Telegram:
-            # bot.send_video(chat_id, binary_file, caption=result["title"])
-            
-            # Example for Discord:
-            # await channel.send(file=discord.File(binary_file))
-            
-    except Exception as e:
-        print(f"Error opening file: {e}")
-        
-    finally:
-        # 3. Clean up the file after sending so your server doesn't run out of storage
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            print("Deleted local file to save space.")
+            # Get the final filename (handles the extension change for MP3)
+            file_path = ydl.prepare_filename(info)
+            if mode == 'mp3':
+                file_path = os.path.splitext(file_path)[0] + ".mp3"
 
-# Run the test
-# asyncio.run(main())
+            # 4. VIDEO INFORMATION (Metadata)
+            metadata = {
+                "status": "success",
+                "title": info.get('title', 'Unknown Title'),
+                "author": info.get('uploader', 'Unknown'),
+                "duration": info.get('duration'),
+                "views": info.get('view_count'),
+                "thumbnail": info.get('thumbnail'),
+                "file_path": file_path # Use this for your bot
+            }
+            return metadata
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# --- HOW TO USE WITH A BOT ---
+# result = await download_media("URL_HERE", mode='video')
+# if result['status'] == 'success':
+#     with open(result['file_path'], 'rb') as f:
+#         # bot.send_video(chat_id, f) <--- This fixes the "Invalid File" error
