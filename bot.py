@@ -84,21 +84,29 @@ async def info_handler(client, message):
     else:
         await message.reply_text(info_caption, quote=True)
 
-# --- DOWNLOADER (Auto Trigger on Link) ---
+# --- DOWNLOADER (Fully Free) ---
 
 @app.on_message(filters.regex(r'http') & filters.private)
 async def dl_handler(client, message):
-    user = await get_user(message.from_user.id)
-    if user['plan'] == 'free' and user['usage_count'] >= 5:
-        return await message.reply_text("❌ **Limit Reached!** Contact @Venuboyy for Premium.", quote=True)
+    # Ensure user is subscribed to required channels
+    if not await is_subscribed(client, message.from_user.id):
+        return await message.reply_text(
+            "⚠️ **Access Denied!**\nPlease join our channels to use this bot.",
+            reply_markup=get_subscribe_buttons(),
+            quote=True
+        )
 
     status = await message.reply_text("🔎 **Processing link...**", quote=True)
     try:
         file_path = await download_media(message.text)
         await status.edit("📤 **Uploading to Telegram...**")
         await message.reply_document(file_path, quote=True)
+        
+        # Log usage in database for stats only (no limits applied)
         await update_usage(message.from_user.id)
-        os.remove(file_path)
+        
+        if os.path.exists(file_path):
+            os.remove(file_path)
         await status.delete()
     except Exception as e:
         await status.edit(f"❌ **Error:** `{e}`")
@@ -162,4 +170,5 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    app.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
