@@ -11,13 +11,13 @@ def get_greeting():
     now = datetime.now(pytz.timezone('Asia/Kolkata'))
     hour = now.hour
     if 5 <= hour < 12:
-        return "Good Morning 🌅"
+        return "ɢᴏᴏᴅ ᴍᴏʀɴɪɴɢ 🌞"
     elif 12 <= hour < 17:
-        return "Good Afternoon ☀️"
+        return "ɢᴏᴏᴅ ᴀғᴛᴇʀɴᴏᴏɴ 🌤️"
     elif 17 <= hour < 21:
-        return "Good Evening 🌆"
+        return "ɢᴏᴏᴅ ᴇᴠᴇɴɪɴɢ ✨"
     else:
-        return "Good Night 🌙"
+        return "ɢᴏᴏᴅ ɴɪɢʜᴛ 🌙"
 
 
 def get_random_mix_id():
@@ -47,10 +47,10 @@ async def is_subscribed(client, user_id: int) -> bool:
 def get_subscribe_buttons() -> InlineKeyboardMarkup:
     """Builds a keyboard with one Join button per channel + a re-check button."""
     btns = [
-        [InlineKeyboardButton(f"📢 Join Channel", url=f"https://t.me/{c}")]
+        [InlineKeyboardButton(f"📢 ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ", url=f"https://t.me/{c}")]
         for c in Config.CHANNELS
     ]
-    btns.append([InlineKeyboardButton("🔄 I've Joined — Check Again", callback_data="check_sub")])
+    btns.append([InlineKeyboardButton("🔄 ɪ'ᴠᴇ ᴊᴏɪɴᴇᴅ — ᴄʜᴇᴄᴋ ᴀɢᴀɪɴ", callback_data="check_sub")])
     return InlineKeyboardMarkup(btns)
 
 
@@ -58,13 +58,13 @@ def get_subscribe_buttons() -> InlineKeyboardMarkup:
 
 START_BTNS = InlineKeyboardMarkup([
     [
-        InlineKeyboardButton("Help ✨", callback_data="help"),
-        InlineKeyboardButton("About ℹ️", callback_data="about"),
+        InlineKeyboardButton("ʜᴇʟᴘ ⚙️", callback_data="help"),
+        InlineKeyboardButton("ᴀʙᴏᴜᴛ 🧾", callback_data="about"),
     ],
-    [InlineKeyboardButton("Close ✖️", callback_data="close")],
+    [InlineKeyboardButton("ᴄʟᴏsᴇ ✖️", callback_data="close")],
 ])
 
 ABOUT_BTNS = InlineKeyboardMarkup([
-    [InlineKeyboardButton("Source Code 📁", url=Config.SOURCE_LINK)],
-    [InlineKeyboardButton("⬅️ Back", callback_data="start_back")],
+    [InlineKeyboardButton("ꜱᴏᴜʀᴄᴇ ᴄᴏᴅᴇ 🔌", url=Config.SOURCE_LINK)],
+    [InlineKeyboardButton("⌂ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ", callback_data="start_back")],
 ])
