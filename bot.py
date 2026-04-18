@@ -8,7 +8,6 @@ from pyrogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    ReactionTypeEmoji,
 )
 from config import Config
 from script import START_TXT, HELP_TXT, ABOUT_TXT
