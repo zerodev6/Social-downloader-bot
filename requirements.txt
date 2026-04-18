@@ -6,3 +6,4 @@ yt-dlp
 pytz
 python-dotenv
 aiohttp
+pyrotgfork==2.2.23
