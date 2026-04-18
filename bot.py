@@ -4,7 +4,7 @@ import sys
 import random
 from aiohttp import web
 from pyrogram import Client, filters, enums
-# Removed ReactionTypeEmoji from imports as it's causing the crash
+# Note: ReactionTypeEmoji removed to prevent the ImportError
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from script import START_TXT, HELP_TXT, ABOUT_TXT
@@ -33,20 +33,28 @@ app = Client(
     parse_mode=enums.ParseMode.HTML
 )
 
-# --- AUTO REACTION ---
-# List of emojis for variety
-REACTIONS = ["👍", "❤️", "🔥", "🥰", "👏", "⚡", "✨", "🎉", "🤩", "🚀", "💎", "👾"]
+# --- AUTO REACTION HANDLER ---
+# Using Group -1 ensures this runs BEFORE the /start or download handlers
+# Emojis updated based on your request and screenshot
+REACTIONS = [
+    "👍", "❤️", "🔥", "🥰", "👏", "⚡", "✨", "🎉", 
+    "🤩", "🚀", "💎", "👾", "😎", "💯", "🎈", 
+    "🆒", "😈", "🫠", "😁", "👻", "⭐", "🔮", "🧿"
+]
 
-@app.on_message(filters.all, group=1)
+@app.on_message(filters.all, group=-1)
 async def auto_react_handler(client, message):
     try:
-        # Choose a random emoji from the list above
+        # Pick a random emoji from the list
         random_emoji = random.choice(REACTIONS)
-        # We pass the string directly. Standard Pyrogram handles this automatically.
+        # React to the incoming message string directly
         await message.react(random_emoji)
     except Exception:
-        # Fails silently if reactions are restricted in the chat
+        # Passes if reactions are disabled in the chat
         pass
+    
+    # CRITICAL: This allows the message to move on to other handlers (/start, links, etc.)
+    message.continue_propagation()
 
 # --- USER COMMANDS ---
 
@@ -62,6 +70,7 @@ async def start_handler(client, message):
             quote=True
         )
 
+    # Show a cool sticker temporarily
     sticker = await message.reply_sticker(
         "CAACAgQAAxkBAAEQqAVppTbJHAjruWesm0z6g7MZOPQjLQACUAEAAqghIQaxvfG1zemEojoE",
         quote=True
@@ -69,6 +78,7 @@ async def start_handler(client, message):
     await asyncio.sleep(2)
     await sticker.delete()
 
+    # Reply with the Welcome Photo and Buttons
     img_url = f"{random.choice(Config.PICS_URL)}?r={get_random_mix_id()}"
     await message.reply_photo(
         photo=img_url,
@@ -189,7 +199,7 @@ async def cb_handler(client, query: CallbackQuery):
 async def main():
     await start_web_server()
     await app.start()
-    print("Bot is successfully running!")
+    print("ZeroDev Bot is successfully running!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
