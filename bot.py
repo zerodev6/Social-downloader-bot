@@ -46,28 +46,35 @@ app = Client(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AUTO REACTION  — uses raw API, no ReactionTypeEmoji import needed
+# REACTION HELPER
 # ─────────────────────────────────────────────────────────────────────────────
 REACTIONS = [
-    "👍", "❤", "🔥", "🥰", "👏", "⚡", "✨", "🎉",
-    "🤩", "🚀", "💎", "👾", "😎", "💯", "🎈",
-    "😈", "😁", "👻", "⭐", "🔮", "🧿",
+    "❤", "🥰", "🔥", "💋", "😍", "😘", "☺",
+    "👍", "🎉", "✨", "⚡", "🚀", "💎", "👏",
+    "🤩", "😎", "💯", "🎊", "🌟", "💫", "🙌",
+    "😻", "🦋", "🌈", "💥", "🎯", "👾", "🔮",
+    "🧿", "💜", "💚", "💙", "🤍", "🖤", "❤‍🔥",
+    "🫶", "🥳", "😇", "🤯", "🫡", "👋", "🙏",
 ]
 
 
-@app.on_message(filters.all, group=-1)
-async def auto_react_handler(client, message):
+async def send_reaction(client, message):
+    """Send a random reaction to the given message."""
     try:
         from pyrogram.raw.functions.messages import SendReaction
         from pyrogram.raw.types import ReactionEmoji
         emoji = random.choice(REACTIONS)
         peer = await client.resolve_peer(message.chat.id)
         await client.invoke(
-            SendReaction(peer=peer, msg_id=message.id, reaction=[ReactionEmoji(emoticon=emoji)])
+            SendReaction(
+                peer=peer,
+                msg_id=message.id,
+                reaction=[ReactionEmoji(emoticon=emoji)],
+                big=True,
+            )
         )
     except Exception:
         pass
-    message.continue_propagation()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +115,9 @@ async def start_handler(client, message):
             quote=True,
         )
 
+    # React to the /start command message
+    await send_reaction(client, message)
+
     sticker = await message.reply_sticker(
         "CAACAgQAAxkBAAEQqAVppTbJHAjruWesm0z6g7MZOPQjLQACUAEAAqghIQaxvfG1zemEojoE",
         quote=True,
@@ -132,20 +142,36 @@ async def info_handler(client, message):
     user = message.from_user
     photos = [p async for p in client.get_chat_photos(user.id, limit=1)]
 
-    info_caption = ( f"<b>👤 ᴜsᴇʀ ɪɴғᴏ</b>\n"
-f"━━━━━━━━━━━━━━━━━━\n"
-f"<b>ɴᴀᴍᴇ:</b> {user.first_name}\n"
-f"<b>ʟᴀsᴛ ɴᴀᴍᴇ:</b> {user.last_name or 'ɴ/ᴀ'}\n"
-f"<b>ᴛᴇʟᴇɢʀᴀᴍ ɪᴅ:</b> <code>{user.id}</code>\n"
-f"<b>ᴅᴄ ɪᴅ:</b> {user.dc_id or 'ᴜɴᴋɴᴏᴡɴ'}\n"
-f"<b>ᴜsᴇʀɴᴀᴍᴇ:</b> @{user.username or 'ɴᴏɴᴇ'}\n"
-f"<b>ᴘʀᴏғɪʟᴇ:</b> <a href='tg://user?id={user.id}'>ᴄʟɪᴄᴋ ʜᴇʀᴇ</a>"
-                   )
+    info_caption = (
+        f"<b>👤 ᴜsᴇʀ ɪɴғᴏ</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"<b>ɴᴀᴍᴇ:</b> {user.first_name}\n"
+        f"<b>ʟᴀsᴛ ɴᴀᴍᴇ:</b> {user.last_name or 'ɴ/ᴀ'}\n"
+        f"<b>ᴛᴇʟᴇɢʀᴀᴍ ɪᴅ:</b> <code>{user.id}</code>\n"
+        f"<b>ᴅᴄ ɪᴅ:</b> {user.dc_id or 'ᴜɴᴋɴᴏᴡɴ'}\n"
+        f"<b>ᴜsᴇʀɴᴀᴍᴇ:</b> @{user.username or 'ɴᴏɴᴇ'}\n"
+        f"<b>ᴘʀᴏғɪʟᴇ:</b> <a href='tg://user?id={user.id}'>ᴄʟɪᴄᴋ ʜᴇʀᴇ</a>"
+    )
 
     if photos:
         await message.reply_photo(photos[0].file_id, caption=info_caption, quote=True)
     else:
         await message.reply_text(info_caption, quote=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REACT TO USER MESSAGES (non-command plain text messages only)
+# ─────────────────────────────────────────────────────────────────────────────
+@app.on_message(
+    filters.private
+    & filters.text
+    & ~filters.command([
+        "start", "help", "info", "stats",
+        "logs", "broadcast", "restart",
+    ])
+)
+async def user_message_react(client, message):
+    await send_reaction(client, message)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -169,7 +195,7 @@ async def dl_handler(client, message):
     if is_youtube(url) and not force_mp3:
         yt_pending[message.chat.id] = url
         await message.reply_text(
-            "🎬 ʏᴏᴜᴛᴜʙᴇ ᴅᴇᴛᴇᴄᴛᴇᴅ!ᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴘʀᴇғᴇʀʀᴇᴅ ǫᴜᴀʟɪᴛʏ:",
+            "🎬 ʏᴏᴜᴛᴜʙᴇ ᴅᴇᴛᴇᴄᴛᴇᴅ! ᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴘʀᴇғᴇʀʀᴇᴅ ǫᴜᴀʟɪᴛʏ:",
             reply_markup=yt_quality_keyboard(),
             quote=True,
         )
@@ -224,7 +250,12 @@ async def _do_download(client, message, url, mode='video', quality='best', reply
         if mode == 'mp3':
             await target.reply_audio(audio=file_path, caption=caption or None, quote=True)
         else:
-            await target.reply_video(video=file_path, caption=caption or None, supports_streaming=True, quote=True)
+            await target.reply_video(
+                video=file_path,
+                caption=caption or None,
+                supports_streaming=True,
+                quote=True,
+            )
 
         await update_usage(message.from_user.id)
 
@@ -232,7 +263,10 @@ async def _do_download(client, message, url, mode='video', quality='best', reply
         err_msg = str(e)
         if len(err_msg) > 200:
             err_msg = err_msg[:200] + '…'
-        await target.reply_text(f"❌ <b>Download failed:</b>\n<code>{err_msg}</code>", quote=True)
+        await target.reply_text(
+            f"❌ <b>Download failed:</b>\n<code>{err_msg}</code>",
+            quote=True,
+        )
 
     finally:
         if file_path and os.path.exists(file_path):
@@ -251,7 +285,7 @@ async def cb_handler(client, query: CallbackQuery):
             await query.answer("✅ ᴀᴄᴄᴇss ɢʀᴀɴᴛᴇᴅ!", show_alert=True)
             await query.message.delete()
         else:
-            await query.answer("❌ ʏᴏᴜ ʜᴀᴠᴇɴ’ᴛ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴄʜᴀɴɴᴇʟs ʏᴇᴛ!", show_alert=True)
+            await query.answer("❌ ʏᴏᴜ ʜᴀᴠᴇɴ'ᴛ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴄʜᴀɴɴᴇʟs ʏᴇᴛ!", show_alert=True)
         return
 
     if data.startswith("ytdl|"):
@@ -284,7 +318,9 @@ async def cb_handler(client, query: CallbackQuery):
     if data == "help":
         await query.message.edit_text(
             HELP_TXT,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⌂ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ", callback_data="start_back")]]),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⌂ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ", callback_data="start_back")]
+            ]),
         )
     elif data == "about":
         await query.message.edit_text(
@@ -307,7 +343,10 @@ async def cb_handler(client, query: CallbackQuery):
 @app.on_message(filters.command("stats") & filters.user(Config.ADMIN_ID))
 async def stats_handler(client, message):
     count = await get_total_users()
-    await message.reply_text(f"📊 <b>Total Users:</b> <code>{count}</code>", quote=True)
+    await message.reply_text(
+        f"📊 <b>Total Users:</b> <code>{count}</code>",
+        quote=True,
+    )
 
 
 @app.on_message(filters.command("logs") & filters.user(Config.ADMIN_ID))
@@ -321,7 +360,10 @@ async def logs_handler(client, message):
 @app.on_message(filters.command("broadcast") & filters.user(Config.ADMIN_ID))
 async def broadcast_handler(client, message):
     if not message.reply_to_message:
-        return await message.reply_text("❌ <b>Reply to a message</b> to broadcast it.", quote=True)
+        return await message.reply_text(
+            "❌ <b>Reply to a message</b> to broadcast it.",
+            quote=True,
+        )
 
     progress = await message.reply_text("🚀 <b>Broadcast starting…</b>", quote=True)
     users = await get_all_users()
@@ -336,7 +378,9 @@ async def broadcast_handler(client, message):
         await asyncio.sleep(0.3)
 
     await progress.edit(
-        f"✅ <b>Broadcast Done!</b>\n\nSuccess: <code>{success}</code>\nFailed: <code>{failed}</code>"
+        f"✅ <b>Broadcast Done!</b>\n\n"
+        f"Success: <code>{success}</code>\n"
+        f"Failed: <code>{failed}</code>"
     )
 
 
