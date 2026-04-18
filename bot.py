@@ -103,7 +103,7 @@ async def start_handler(client, message):
 
     if not await is_subscribed(client, user_id):
         return await message.reply_text(
-            "⚠️ <b>Access Denied!</b>\nPlease join our channels to use this bot.",
+            "⚠️ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ! 📢 ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ ᴜsɪɴɢ ᴛʜᴇ ʙᴏᴛ.",
             reply_markup=get_subscribe_buttons(),
             quote=True,
         )
@@ -132,16 +132,15 @@ async def info_handler(client, message):
     user = message.from_user
     photos = [p async for p in client.get_chat_photos(user.id, limit=1)]
 
-    info_caption = (
-        f"<b>👤 USER INFO</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"<b>First Name:</b> {user.first_name}\n"
-        f"<b>Last Name:</b> {user.last_name or 'N/A'}\n"
-        f"<b>Telegram ID:</b> <code>{user.id}</code>\n"
-        f"<b>DC ID:</b> {user.dc_id or 'Unknown'}\n"
-        f"<b>Username:</b> @{user.username or 'None'}\n"
-        f"<b>Profile:</b> <a href='tg://user?id={user.id}'>Clickable Link</a>"
-    )
+    info_caption = ( f"<b>👤 ᴜsᴇʀ ɪɴғᴏ</b>\n"
+f"━━━━━━━━━━━━━━━━━━\n"
+f"<b>ɴᴀᴍᴇ:</b> {user.first_name}\n"
+f"<b>ʟᴀsᴛ ɴᴀᴍᴇ:</b> {user.last_name or 'ɴ/ᴀ'}\n"
+f"<b>ᴛᴇʟᴇɢʀᴀᴍ ɪᴅ:</b> <code>{user.id}</code>\n"
+f"<b>ᴅᴄ ɪᴅ:</b> {user.dc_id or 'ᴜɴᴋɴᴏᴡɴ'}\n"
+f"<b>ᴜsᴇʀɴᴀᴍᴇ:</b> @{user.username or 'ɴᴏɴᴇ'}\n"
+f"<b>ᴘʀᴏғɪʟᴇ:</b> <a href='tg://user?id={user.id}'>ᴄʟɪᴄᴋ ʜᴇʀᴇ</a>"
+                   )
 
     if photos:
         await message.reply_photo(photos[0].file_id, caption=info_caption, quote=True)
@@ -158,7 +157,7 @@ async def dl_handler(client, message):
 
     if not await is_subscribed(client, user_id):
         return await message.reply_text(
-            "⚠️ <b>Access Denied!</b>\nPlease join our channels to use this bot.",
+            "⚠️ ᴀᴄᴄᴇss ᴅᴇɴɪᴇᴅ! 📢 ᴊᴏɪɴ ᴏᴜʀ ᴄʜᴀɴɴᴇʟs ᴛᴏ ᴄᴏɴᴛɪɴᴜᴇ ᴜsɪɴɢ ᴛʜᴇ ʙᴏᴛ.",
             reply_markup=get_subscribe_buttons(),
             quote=True,
         )
@@ -170,7 +169,7 @@ async def dl_handler(client, message):
     if is_youtube(url) and not force_mp3:
         yt_pending[message.chat.id] = url
         await message.reply_text(
-            "🎬 <b>YouTube detected!</b>\nChoose your preferred quality:",
+            "🎬 ʏᴏᴜᴛᴜʙᴇ ᴅᴇᴛᴇᴄᴛᴇᴅ!ᴄʜᴏᴏsᴇ ʏᴏᴜʀ ᴘʀᴇғᴇʀʀᴇᴅ ǫᴜᴀʟɪᴛʏ:",
             reply_markup=yt_quality_keyboard(),
             quote=True,
         )
@@ -249,10 +248,10 @@ async def cb_handler(client, query: CallbackQuery):
 
     if data == "check_sub":
         if await is_subscribed(client, query.from_user.id):
-            await query.answer("✅ Access granted!", show_alert=True)
+            await query.answer("✅ ᴀᴄᴄᴇss ɢʀᴀɴᴛᴇᴅ!", show_alert=True)
             await query.message.delete()
         else:
-            await query.answer("❌ You haven't joined all channels yet!", show_alert=True)
+            await query.answer("❌ ʏᴏᴜ ʜᴀᴠᴇɴ’ᴛ ᴊᴏɪɴᴇᴅ ᴀʟʟ ᴄʜᴀɴɴᴇʟs ʏᴇᴛ!", show_alert=True)
         return
 
     if data.startswith("ytdl|"):
@@ -260,7 +259,7 @@ async def cb_handler(client, query: CallbackQuery):
         url = yt_pending.get(query.message.chat.id)
 
         if not url:
-            await query.answer("⚠️ Session expired. Send the link again.", show_alert=True)
+            await query.answer("⚠️ sᴇssɪᴏɴ ᴇxᴘɪʀᴇᴅ. sᴇɴᴅ ᴛʜᴇ ʟɪɴᴋ ᴀɢᴀɪɴ.", show_alert=True)
             return
 
         await query.answer(f"{'🎵 MP3' if choice == 'mp3' else f'📥 {choice}p'} selected!")
@@ -285,7 +284,7 @@ async def cb_handler(client, query: CallbackQuery):
     if data == "help":
         await query.message.edit_text(
             HELP_TXT,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="start_back")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⌂ ʙᴀᴄᴋ ᴛᴏ ʜᴏᴍᴇ", callback_data="start_back")]]),
         )
     elif data == "about":
         await query.message.edit_text(
