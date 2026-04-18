@@ -4,7 +4,8 @@ import sys
 import random
 from aiohttp import web
 from pyrogram import Client, filters, enums
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReactionType
+# Added ReactionTypeEmoji to the imports
+from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReactionTypeEmoji
 from config import Config
 from script import START_TXT, HELP_TXT, ABOUT_TXT
 from database import add_user, get_user, update_usage, get_total_users, get_all_users
@@ -32,24 +33,15 @@ app = Client(
     parse_mode=enums.ParseMode.HTML
 )
 
-# --- AUTO REACTION HANDLER ---
-# This mirrors your logic: random emoji, skips media groups, and reacts to everything.
-@app.on_message(filters.incoming & filters.private & ~filters.bot, group=-1)
-async def auto_reaction_handler(client, message):
-    # Skip if it's part of an album (media_group_id)
-    if message.media_group_id:
-        return 
+# --- AUTO REACTION (Group 1 so it doesn't block other commands) ---
 
-    # Your specific emoji list
-    reactions = ["❤️", "🥰", "🔥", "💋", "😍", "😘", "☺️"]
-    chosen_emoji = random.choice(reactions)
-
+@app.on_message(filters.all, group=1)
+async def auto_react_handler(client, message):
     try:
-        # In Pyrogram, we use .react(). 
-        # To get the "Big" effect and multiple reactions (like your screenshot), 
-        # we pass them in a list. I added a second static emoji to match the photo.
-        await message.react(chosen_emoji)
+        # Auto-reacts to the message in real-time
+        await message.react([ReactionTypeEmoji(emoji="👍")])
     except Exception:
+        # Passes silently if the chat has reactions disabled or another error occurs
         pass
 
 # --- USER COMMANDS ---
@@ -113,12 +105,11 @@ async def dl_handler(client, message):
             quote=True
         )
 
-    # Temporary reaction to show processing
-    try: await message.react("⏳")
-    except: pass
-
     url = message.text.strip()
+
+    # Detect if user wants MP3 (they can send url + "mp3" or "/mp3")
     mode = 'mp3' if 'mp3' in url.lower() else 'video'
+    # Strip any mode keyword from url if present
     url = url.replace('mp3', '').replace('MP3', '').strip()
 
     status = await message.reply_text("🔎 **Processing link...**", quote=True)
@@ -129,23 +120,24 @@ async def dl_handler(client, message):
         await status.edit("📤 **Uploading to Telegram...**")
 
         if mode == 'mp3':
-            await message.reply_audio(audio=file_path, quote=True)
+            await message.reply_audio(
+                audio=file_path,
+                quote=True
+            )
         else:
-            await message.reply_video(video=file_path, quote=True)
+            await message.reply_video(
+                video=file_path,
+                quote=True
+            )
 
         await update_usage(message.from_user.id)
         await status.delete()
-        
-        # Success reaction
-        try: await message.react("✅")
-        except: pass
 
     except Exception as e:
         await status.edit(f"❌ **Error:** `{e}`")
-        try: await message.react("⚠️")
-        except: pass
 
     finally:
+        # Always clean up the downloaded file
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
@@ -204,7 +196,7 @@ async def cb_handler(client, query: CallbackQuery):
 async def main():
     await start_web_server()
     await app.start()
-    print("ZeroDev Bot Started Successfully!")
+    print("Bot is successfully running!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
