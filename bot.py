@@ -4,8 +4,8 @@ import sys
 import random
 from aiohttp import web
 from pyrogram import Client, filters, enums
-# Added ReactionTypeEmoji to the imports
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReactionTypeEmoji
+# Removed ReactionTypeEmoji from imports as it's causing the crash
+from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from script import START_TXT, HELP_TXT, ABOUT_TXT
 from database import add_user, get_user, update_usage, get_total_users, get_all_users
@@ -33,15 +33,19 @@ app = Client(
     parse_mode=enums.ParseMode.HTML
 )
 
-# --- AUTO REACTION (Group 1 so it doesn't block other commands) ---
+# --- AUTO REACTION ---
+# List of emojis for variety
+REACTIONS = ["👍", "❤️", "🔥", "🥰", "👏", "⚡", "✨", "🎉", "🤩", "🚀", "💎", "👾"]
 
 @app.on_message(filters.all, group=1)
 async def auto_react_handler(client, message):
     try:
-        # Auto-reacts to the message in real-time
-        await message.react([ReactionTypeEmoji(emoji="👍")])
+        # Choose a random emoji from the list above
+        random_emoji = random.choice(REACTIONS)
+        # We pass the string directly. Standard Pyrogram handles this automatically.
+        await message.react(random_emoji)
     except Exception:
-        # Passes silently if the chat has reactions disabled or another error occurs
+        # Fails silently if reactions are restricted in the chat
         pass
 
 # --- USER COMMANDS ---
@@ -106,10 +110,7 @@ async def dl_handler(client, message):
         )
 
     url = message.text.strip()
-
-    # Detect if user wants MP3 (they can send url + "mp3" or "/mp3")
     mode = 'mp3' if 'mp3' in url.lower() else 'video'
-    # Strip any mode keyword from url if present
     url = url.replace('mp3', '').replace('MP3', '').strip()
 
     status = await message.reply_text("🔎 **Processing link...**", quote=True)
@@ -120,24 +121,16 @@ async def dl_handler(client, message):
         await status.edit("📤 **Uploading to Telegram...**")
 
         if mode == 'mp3':
-            await message.reply_audio(
-                audio=file_path,
-                quote=True
-            )
+            await message.reply_audio(audio=file_path, quote=True)
         else:
-            await message.reply_video(
-                video=file_path,
-                quote=True
-            )
+            await message.reply_video(video=file_path, quote=True)
 
         await update_usage(message.from_user.id)
         await status.delete()
 
     except Exception as e:
         await status.edit(f"❌ **Error:** `{e}`")
-
     finally:
-        # Always clean up the downloaded file
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
 
