@@ -3,8 +3,41 @@ import os
 import asyncio
 import glob
 
+# ─────────────────────────────────────────────────────────────────────────────
+# COOKIES SETUP
+# Reads YOUTUBE_COOKIES and INSTAGRAM_COOKIES from environment variables.
+# Set these in Koyeb → Environment Variables as the raw Netscape cookie string.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Platform detection helpers
+def _write_cookie_file(env_var: str, filename: str) -> str | None:
+    """
+    If env_var is set, writes its content to filename and returns the path.
+    Returns None if env_var is not set or file already exists on disk.
+    """
+    content = os.environ.get(env_var, '').strip()
+    if not content:
+        return None
+    os.makedirs('cookies', exist_ok=True)
+    path = f'cookies/{filename}'
+    if not os.path.exists(path):
+        with open(path, 'w') as f:
+            # Ensure Netscape header is present
+            if not content.startswith('# Netscape'):
+                f.write('# Netscape HTTP Cookie File\n')
+            f.write(content)
+    return path
+
+
+# Write cookies on module load (once per container start)
+_YT_COOKIE_FILE = _write_cookie_file('YOUTUBE_COOKIES', 'youtube.txt') or 'cookies/youtube.txt'
+_IG_COOKIE_FILE = _write_cookie_file('INSTAGRAM_COOKIES', 'instagram.txt') or 'cookies/instagram.txt'
+_FB_COOKIE_FILE = _write_cookie_file('FACEBOOK_COOKIES', 'facebook.txt') or 'cookies/facebook.txt'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLATFORM DETECTION
+# ─────────────────────────────────────────────────────────────────────────────
+
 def is_youtube(url: str) -> bool:
     return any(x in url for x in ['youtube.com', 'youtu.be', 'yt.be'])
 
@@ -18,10 +51,12 @@ def is_facebook(url: str) -> bool:
     return any(x in url for x in ['facebook.com', 'fb.com', 'fb.watch', 'm.facebook.com'])
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# BASE OPTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_ydl_base_opts() -> dict:
-    """Common yt-dlp options shared across all platforms."""
     return {
-        'cookiefile': 'cookies.txt',
         'quiet': True,
         'no_warnings': True,
         'nocheckcertificate': True,
@@ -43,14 +78,11 @@ def get_ydl_base_opts() -> dict:
     }
 
 
-def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict:
-    """
-    Build yt-dlp options based on platform and mode.
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILD OPTIONS PER PLATFORM
+# ─────────────────────────────────────────────────────────────────────────────
 
-    :param url:     The media URL
-    :param mode:    'video' | 'mp3'
-    :param quality: For YouTube — '144' | '240' | '360' | '480' | '720' | '1080' | '1440' | '2160' | 'best'
-    """
+def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict:
     opts = get_ydl_base_opts()
 
     # ── MP3 mode ──────────────────────────────────────────────────────────────
@@ -61,16 +93,25 @@ def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
+        # Still apply cookies for platforms that need auth for audio too
+        if is_youtube(url) and os.path.exists(_YT_COOKIE_FILE):
+            opts['cookiefile'] = _YT_COOKIE_FILE
+        elif is_instagram(url) and os.path.exists(_IG_COOKIE_FILE):
+            opts['cookiefile'] = _IG_COOKIE_FILE
+        elif is_facebook(url) and os.path.exists(_FB_COOKIE_FILE):
+            opts['cookiefile'] = _FB_COOKIE_FILE
         return opts
 
     # ── VIDEO mode ────────────────────────────────────────────────────────────
 
     if is_youtube(url):
-        # Quality selection for YouTube
+        if os.path.exists(_YT_COOKIE_FILE):
+            opts['cookiefile'] = _YT_COOKIE_FILE
+        # Quality selection
         if quality == 'best':
             opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
         else:
-            h = quality  # e.g. '720'
+            h = quality
             opts['format'] = (
                 f'bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/'
                 f'bestvideo[height<={h}]+bestaudio/'
@@ -78,13 +119,8 @@ def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict
             )
 
     elif is_tiktok(url):
-        # TikTok: grab watermark-free version when possible
-        opts['format'] = (
-            'bestvideo[vcodec!=none]+bestaudio/'
-            'bestvideo[format_id*=play]+bestaudio/'
-            'best'
-        )
-        # Some TikTok endpoints need a fresh user-agent
+        # TikTok — watermark-free, no cookies needed usually
+        opts['format'] = 'bestvideo[vcodec!=none]+bestaudio/best'
         opts['user_agent'] = (
             'com.zhiliaoapp.musically/2022600030 '
             '(Linux; U; Android 11; en_US; Pixel 4; '
@@ -93,33 +129,40 @@ def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict
         opts['http_headers']['Referer'] = 'https://www.tiktok.com/'
 
     elif is_instagram(url):
-        # Instagram Reels / Posts / Stories
+        if os.path.exists(_IG_COOKIE_FILE):
+            opts['cookiefile'] = _IG_COOKIE_FILE
         opts['format'] = 'bestvideo+bestaudio/best'
         opts['http_headers'].update({
             'Referer': 'https://www.instagram.com/',
             'Origin':  'https://www.instagram.com',
         })
-        # Stories & highlights may need auth via cookies — cookiefile handles it
 
     elif is_facebook(url):
-        # Facebook Videos / Reels / Watch
+        if os.path.exists(_FB_COOKIE_FILE):
+            opts['cookiefile'] = _FB_COOKIE_FILE
         opts['format'] = 'bestvideo+bestaudio/best'
         opts['http_headers']['Referer'] = 'https://www.facebook.com/'
 
     else:
-        # Generic fallback (Twitter/X, Reddit, Dailymotion, etc.)
         opts['format'] = 'bestvideo+bestaudio/best'
 
     return opts
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# METADATA FETCH (for caption, no download)
+# ─────────────────────────────────────────────────────────────────────────────
+
 async def get_media_info(url: str) -> dict:
-    """
-    Fetch metadata WITHOUT downloading (for captions / quality lists).
-    Returns yt-dlp info dict or empty dict on failure.
-    """
     opts = get_ydl_base_opts()
     opts['skip_download'] = True
+    # Apply cookies for info fetch too
+    if is_youtube(url) and os.path.exists(_YT_COOKIE_FILE):
+        opts['cookiefile'] = _YT_COOKIE_FILE
+    elif is_instagram(url) and os.path.exists(_IG_COOKIE_FILE):
+        opts['cookiefile'] = _IG_COOKIE_FILE
+    elif is_facebook(url) and os.path.exists(_FB_COOKIE_FILE):
+        opts['cookiefile'] = _FB_COOKIE_FILE
 
     loop = asyncio.get_event_loop()
     try:
@@ -132,75 +175,63 @@ async def get_media_info(url: str) -> dict:
         return {}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CAPTION BUILDER
+# ─────────────────────────────────────────────────────────────────────────────
+
 def build_caption(info: dict, mode: str, quality: str = '') -> str:
-    """
-    Build a rich caption from yt-dlp info dict.
-    Returns empty string if info is missing.
-    """
     if not info:
         return ''
 
     title      = info.get('title', '')
     uploader   = info.get('uploader') or info.get('channel') or info.get('creator', '')
-    duration   = info.get('duration')  # seconds
+    duration   = info.get('duration')
     view_count = info.get('view_count')
     like_count = info.get('like_count')
     webpage    = info.get('webpage_url', '')
 
-    # --- duration formatting ---
     dur_str = ''
     if duration:
         m, s = divmod(int(duration), 60)
         h, m = divmod(m, 60)
         dur_str = f'{h:02d}:{m:02d}:{s:02d}' if h else f'{m:02d}:{s:02d}'
 
-    # --- view/like formatting ---
     def fmt_num(n):
-        if n is None:
-            return 'N/A'
-        if n >= 1_000_000:
-            return f'{n/1_000_000:.1f}M'
-        if n >= 1_000:
-            return f'{n/1_000:.1f}K'
+        if n is None: return 'N/A'
+        if n >= 1_000_000: return f'{n/1_000_000:.1f}M'
+        if n >= 1_000: return f'{n/1_000:.1f}K'
         return str(n)
 
-    platform = '🌐'
-    if is_youtube(webpage):   platform = '▶️ YouTube'
-    elif is_tiktok(webpage):  platform = '🎵 TikTok'
-    elif is_instagram(webpage): platform = '📸 Instagram'
-    elif is_facebook(webpage):  platform = '📘 Facebook'
+    if is_youtube(webpage):      platform = '▶️ YouTube'
+    elif is_tiktok(webpage):     platform = '🎵 TikTok'
+    elif is_instagram(webpage):  platform = '📸 Instagram'
+    elif is_facebook(webpage):   platform = '📘 Facebook'
+    else:                        platform = '🌐 Web'
 
     mode_icon = '🎵 MP3' if mode == 'mp3' else '🎬 Video'
-    qual_line = f'\n<b>Quality:</b> {quality}p' if quality and quality != 'best' and mode == 'video' else ''
 
-    lines = [
-        f'<b>{platform}</b> | {mode_icon}',
-        '',
-    ]
-    if title:      lines.append(f'<b>📝 Title:</b> {title}')
-    if uploader:   lines.append(f'<b>👤 By:</b> {uploader}')
-    if dur_str:    lines.append(f'<b>⏱ Duration:</b> {dur_str}')
-    if view_count is not None: lines.append(f'<b>👁 Views:</b> {fmt_num(view_count)}')
-    if like_count is not None: lines.append(f'<b>❤️ Likes:</b> {fmt_num(like_count)}')
-    if qual_line:  lines.append(qual_line.strip())
-    lines.append('')
-    lines.append('<i>⚡ Downloaded by @YourBotUsername</i>')
+    lines = [f'<b>{platform}</b>  |  {mode_icon}', '']
+    if title:                       lines.append(f'<b>📝</b> {title}')
+    if uploader:                    lines.append(f'<b>👤</b> {uploader}')
+    if dur_str:                     lines.append(f'<b>⏱</b> {dur_str}')
+    if view_count is not None:      lines.append(f'<b>👁</b> {fmt_num(view_count)}')
+    if like_count is not None:      lines.append(f'<b>❤️</b> {fmt_num(like_count)}')
+    if quality and quality != 'best' and mode == 'video':
+        lines.append(f'<b>🎞</b> {quality}p')
+    lines += ['', '<i>⚡ @FullSaveMe_z_Bot</i>']
 
     return '\n'.join(lines)
 
 
-async def download_media(url: str, mode: str = 'video', quality: str = 'best') -> tuple[str, str]:
-    """
-    Downloads media from TikTok / Instagram / Facebook / YouTube / generic URLs.
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN DOWNLOAD FUNCTION
+# Returns (file_path, caption) — raises on failure
+# ─────────────────────────────────────────────────────────────────────────────
 
-    :param url:     The media URL
-    :param mode:    'video' | 'mp3'
-    :param quality: YouTube quality — '144','240','360','480','720','1080','1440','2160','best'
-    :return:        (absolute_file_path, caption_html)  — raises Exception on failure
-    """
+async def download_media(url: str, mode: str = 'video', quality: str = 'best') -> tuple:
     os.makedirs('downloads', exist_ok=True)
 
-    # Fetch info first for caption (non-blocking attempt)
+    # Fetch metadata for caption (best-effort, won't block download on failure)
     info = await get_media_info(url)
     caption = build_caption(info, mode, quality)
 
@@ -213,7 +244,7 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
         )
 
         if not dl_info:
-            raise ValueError("yt-dlp returned no info — the link may be private or unsupported.")
+            raise ValueError("yt-dlp returned no info — link may be private or unsupported.")
 
         expected_path = ydl.prepare_filename(dl_info)
 
@@ -222,15 +253,13 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
         else:
             file_path = os.path.splitext(expected_path)[0] + '.mp4'
 
-        # Fallback: pick the newest matching file in downloads/
+        # Fallback: newest matching file in downloads/
         if not os.path.exists(file_path):
             ext = 'mp3' if mode == 'mp3' else 'mp4'
             matches = glob.glob(f'downloads/*.{ext}')
             if matches:
                 file_path = max(matches, key=os.path.getmtime)
             else:
-                raise FileNotFoundError(
-                    f"Downloaded file not found. Expected: {file_path}"
-                )
+                raise FileNotFoundError(f"Downloaded file not found. Expected: {file_path}")
 
     return os.path.abspath(file_path), caption
