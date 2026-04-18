@@ -5,6 +5,8 @@ import random
 from aiohttp import web
 from pyrogram import Client, filters, enums
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.raw.functions.messages import SendReaction
+from pyrogram.raw.types import ReactionEmoji
 from config import Config
 from script import START_TXT, HELP_TXT, ABOUT_TXT
 from database import add_user, update_usage, get_total_users, get_all_users
@@ -46,11 +48,11 @@ app = Client(
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AUTO REACTION — your logic, translated to Pyrogram
+# AUTO REACTION — fires on every user message
 # ─────────────────────────────────────────────────────────────────────────────
 @app.on_message(filters.all & ~filters.bot, group=-1)
 async def auto_react_handler(client, message):
-    # Skip album/media group messages
+    # Skip media group / album messages
     if message.media_group_id:
         message.continue_propagation()
         return
@@ -58,12 +60,14 @@ async def auto_react_handler(client, message):
     try:
         a = ["❤️", "🥰", "🔥", "💋", "😍", "😘", "☺️"]
         b = random.choice(a)
-
-        await client.send_reaction(
-            chat_id=message.chat.id,
-            message_id=message.id,
-            emoji=b,
-            big=True,
+        peer = await client.resolve_peer(message.chat.id)
+        await client.invoke(
+            SendReaction(
+                peer=peer,
+                msg_id=message.id,
+                reaction=[ReactionEmoji(emoticon=b)],
+                big=True,
+            )
         )
     except Exception:
         pass
