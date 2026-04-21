@@ -2,10 +2,33 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y ffmpeg
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    wget \
+    curl \
+    git \
+    gcc \
+    g++ \
+    libssl-dev \
+    libffi-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    zlib1g-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create necessary folders
+RUN mkdir -p cookies downloads
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Pre-download spotdl dependencies
+RUN spotdl --download-ffmpeg || true
 
 COPY . .
-
-RUN pip install --no-cache-dir -r requirements.txt
 
 CMD ["python", "bot.py"]
