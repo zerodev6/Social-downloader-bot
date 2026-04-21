@@ -9,15 +9,13 @@ import subprocess
 import glob
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COOKIES SETUP (BULLETPROOF METHOD)
+# COOKIES SETUP
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_cookie_file(filename: str, env_var: str) -> str | None:
-    # 1. Look for a physical file in the root directory (Best & Most Reliable)
     if os.path.exists(filename):
         return os.path.abspath(filename)
     
-    # 2. Fallback to Environment Variable if physical file isn't found
     content = os.environ.get(env_var, '').strip()
     if content:
         os.makedirs('cookies', exist_ok=True)
@@ -27,7 +25,6 @@ def get_cookie_file(filename: str, env_var: str) -> str | None:
                 f.write('# Netscape HTTP Cookie File\n')
             f.write(content)
         return os.path.abspath(path)
-    
     return None
 
 _YT_COOKIE_FILE = get_cookie_file('youtube.txt', 'YOUTUBE_COOKIES')
@@ -49,10 +46,8 @@ def is_facebook(url: str) -> bool:
     return any(x in url.lower() for x in ['facebook.com', 'fb.com', 'fb.watch'])
 
 def is_spotify(url: str) -> bool:
-    return 'spotify.com' in url.lower() or 'spotify.com' in url.lower()
-
-def is_pinterest(url: str) -> bool:
-    return any(x in url.lower() for x in ['pinterest.com', 'pin.it'])
+    # Basic check for common Spotify redirection or direct links
+    return 'spotify.com' in url.lower() or 'googleusercontent.com/spotify' in url.lower()
 
 def get_platform_name(url: str) -> str:
     if is_youtube(url):   return '▶️ YouTube'
@@ -60,17 +55,15 @@ def get_platform_name(url: str) -> str:
     if is_instagram(url): return '📸 Instagram'
     if is_facebook(url):  return '📘 Facebook'
     if is_spotify(url):   return '🎧 Spotify'
-    if is_pinterest(url): return '📌 Pinterest'
     return '🌐 Web'
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SPECIAL DOWNLOADERS (TIKTOK & SPOTIFY)
+# SPECIAL DOWNLOADERS
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def download_tiktok_photo(url: str) -> tuple:
     os.makedirs('downloads', exist_ok=True)
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(url, allow_redirects=True) as resp:
             html = await resp.text()
@@ -94,37 +87,22 @@ async def download_tiktok_photo(url: str) -> tuple:
 async def download_spotify(url: str) -> tuple:
     os.makedirs('downloads', exist_ok=True)
     output_dir = os.path.abspath("downloads")
-    
-    # Pass the cookie file to spotdl so it doesn't get blocked by YouTube
-    cmd = [
-        "spotdl", "download", url,
-        "--output", f"{output_dir}/{{title}} - {{artist}}.{{output-ext}}"
-    ]
+    cmd = ["spotdl", "download", url, "--output", f"{output_dir}/{{title}} - {{artist}}.{{output-ext}}"]
     
     if _YT_COOKIE_FILE:
         cmd.extend(["--cookie-file", _YT_COOKIE_FILE])
     
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    
+    process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
-        if process.returncode != 0:
-            raise Exception(stderr.decode('utf-8', errors='ignore'))
-            
         files = glob.glob(f"{output_dir}/*.mp3")
         if not files:
-            raise Exception("File downloaded but not found.")
-            
+            raise Exception("Spotify download failed or timed out.")
         newest_file = max(files, key=os.path.getctime)
-        caption = f"<b>🎧 Spotify</b> | 🎵 Download Complete\n\n<i>⚡ @ZeroDev_Bot</i>"
-        return newest_file, caption
-    except asyncio.TimeoutError:
-        process.kill()
-        raise Exception("Spotify download timed out. Try again later.")
+        return newest_file, f"<b>🎧 Spotify</b> | 🎵 Download Complete\n\n<i>⚡ @ZeroDev_Bot</i>"
+    except Exception as e:
+        if process: process.kill()
+        raise e
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CORE DOWNLOADER
@@ -133,19 +111,28 @@ async def download_spotify(url: str) -> tuple:
 async def download_media(url: str, mode: str = 'video', quality: str = 'best') -> tuple:
     if is_tiktok(url) and '/photo/' in url:
         return await download_tiktok_photo(url)
-    
     if is_spotify(url):
         return await download_spotify(url)
 
     os.makedirs('downloads', exist_ok=True)
     
+    # --- SMART FORMAT SELECTOR ---
+    # This logic says: "Try to find the best video up to my requested height, 
+    # but if that specific height/codec combo fails, just give me the best available overall."
+    if mode == 'mp3':
+        format_str = 'bestaudio/best'
+    else:
+        # Fallback logic: bestvideo[height<=720] + bestaudio OR just the best available video
+        format_str = f'bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best'
+
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'outtmpl': 'downloads/%(title).50s.%(ext)s',
-        'format': 'bestaudio/best' if mode == 'mp3' else f'bestvideo[height<={quality}]+bestaudio/best[ext=m4a]/best[height<={quality}]',
+        'format': format_str,
         'merge_output_format': 'mp4',
         'geo_bypass': True,
+        'nocheckcertificate': True,
     }
 
     if mode == 'mp3':
@@ -155,10 +142,10 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
             'preferredquality': '192',
         }]
 
-    # Attach cookies to standard yt-dlp downloads
     if _YT_COOKIE_FILE and is_youtube(url):
         ydl_opts['cookiefile'] = _YT_COOKIE_FILE
 
+    # Bypassing YouTube "Bot" restrictions
     if is_youtube(url):
         ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'web']}}
 
