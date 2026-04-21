@@ -274,11 +274,10 @@ def build_ydl_opts(url: str, mode: str = 'video', quality: str = 'best') -> dict
 
     if is_youtube(url):
         apply_cookies(_YT_COOKIE_FILE)
-        # Use fallback player clients if no cookies available
-        if not os.path.exists(_YT_COOKIE_FILE):
-            opts['extractor_args'] = {
-                'youtube': {'player_client': ['tv_embedded', 'mweb', 'web']}
-            }
+        # Always use multiple player clients for resilience (bypass bot check)
+        opts['extractor_args'] = {
+            'youtube': {'player_client': ['tv_embedded', 'web', 'mweb']}
+        }
         if quality == 'best':
             opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
         else:
@@ -511,22 +510,41 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
     min_mtime = time.time() - 2
     loop = asyncio.get_event_loop()
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        dl_info = await loop.run_in_executor(
-            None, lambda: ydl.extract_info(url, download=True)
-        )
-        if not dl_info:
-            raise ValueError("yt-dlp returned no info — link may be private or unsupported.")
+    # YouTube: retry with different player clients on bot-check error
+    last_error = None
+    yt_clients = [['tv_embedded', 'web', 'mweb'], ['ios'], ['android'], ['mweb']]
+    attempts = yt_clients if is_youtube(url) else [None]
 
-        expected_path = ydl.prepare_filename(dl_info)
-        if mode == 'mp3':
-            expected_path = os.path.splitext(expected_path)[0] + '.mp3'
-        elif mode != 'image':
-            expected_path = os.path.splitext(expected_path)[0] + '.mp4'
+    for attempt in attempts:
+        try:
+            current_opts = dict(ydl_opts)
+            if attempt and is_youtube(url):
+                current_opts['extractor_args'] = {'youtube': {'player_client': attempt}}
 
-    files = collect_downloaded_files(mode, expected_path, min_mtime)
-    if not files:
-        raise FileNotFoundError(f"No downloaded files found. Expected: {expected_path}")
+            with yt_dlp.YoutubeDL(current_opts) as ydl:
+                dl_info = await loop.run_in_executor(
+                    None, lambda: ydl.extract_info(url, download=True)
+                )
+                if not dl_info:
+                    raise ValueError("yt-dlp returned no info — link may be private or unsupported.")
 
-    result = [os.path.abspath(f) for f in files]
-    return (result if len(result) > 1 else result[0]), caption
+                expected_path = ydl.prepare_filename(dl_info)
+                if mode == 'mp3':
+                    expected_path = os.path.splitext(expected_path)[0] + '.mp3'
+                elif mode != 'image':
+                    expected_path = os.path.splitext(expected_path)[0] + '.mp4'
+
+                files = collect_downloaded_files(mode, expected_path, min_mtime)
+                if not files:
+                    raise FileNotFoundError(f"No downloaded files found. Expected: {expected_path}")
+
+                result = [os.path.abspath(f) for f in files]
+                return (result if len(result) > 1 else result[0]), caption
+
+        except Exception as e:
+            last_error = e
+            if not is_youtube(url):
+                raise
+            continue
+
+    raise last_error
