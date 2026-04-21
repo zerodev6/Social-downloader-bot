@@ -7,3 +7,8 @@ pytz
 python-dotenv
 aiohttp
 pyrotgfork==2.2.23
+spotdl
+mutagen
+beautifulsoup4
+lxml
+requests
