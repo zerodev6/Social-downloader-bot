@@ -4,7 +4,12 @@ import sys
 import random
 from aiohttp import web
 from pyrogram import Client, filters, enums
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import (
+    CallbackQuery, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton,
+    InputMediaPhoto
+)
 from pyrogram.raw.functions.messages import SendReaction
 from pyrogram.raw.types import ReactionEmoji
 from config import Config
@@ -52,7 +57,6 @@ app = Client(
 # ─────────────────────────────────────────────────────────────────────────────
 @app.on_message(filters.all & ~filters.bot, group=-1)
 async def auto_react_handler(client, message):
-    # Skip media group / album messages
     if message.media_group_id:
         message.continue_propagation()
         return
@@ -185,15 +189,17 @@ async def dl_handler(client, message):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORE DOWNLOAD + UPLOAD
+# CORE DOWNLOAD + UPLOAD (UPDATED FOR MULTI-FILE SUPPORT)
 # ─────────────────────────────────────────────────────────────────────────────
 async def _do_download(client, message, url, mode='video', quality='best', reply_to=None, edit_msg=None):
     target = reply_to or message
-    file_path = None
+    file_path = None # Can be a string or a list of strings
 
     try:
+        # Initial action type
         upload_action = (
             enums.ChatAction.UPLOAD_AUDIO if mode == 'mp3'
+            else enums.ChatAction.UPLOAD_PHOTO if '/photo/' in url.lower() or 'pin.it' in url.lower()
             else enums.ChatAction.UPLOAD_VIDEO
         )
 
@@ -210,6 +216,7 @@ async def _do_download(client, message, url, mode='video', quality='best', reply
         action_task = asyncio.create_task(keep_action())
 
         try:
+            # Result is either path (str) or gallery (list)
             file_path, caption = await download_media(url, mode=mode, quality=quality)
         finally:
             stop_action.set()
@@ -219,16 +226,23 @@ async def _do_download(client, message, url, mode='video', quality='best', reply
             except asyncio.CancelledError:
                 pass
 
-        await client.send_chat_action(message.chat.id, upload_action)
-
         if edit_msg:
             try:
                 await edit_msg.delete()
             except Exception:
                 pass
 
-        if mode == 'mp3':
+        # Handle Uploads
+        if isinstance(file_path, list):
+            # Album / Slideshow handling
+            media_group = []
+            for i, p in enumerate(file_path):
+                media_group.append(InputMediaPhoto(media=p, caption=caption if i == 0 else None))
+            await target.reply_media_group(media=media_group, quote=True)
+        
+        elif mode == 'mp3':
             await target.reply_audio(audio=file_path, caption=caption or None, quote=True)
+        
         else:
             await target.reply_video(video=file_path, caption=caption or None, supports_streaming=True, quote=True)
 
@@ -241,8 +255,15 @@ async def _do_download(client, message, url, mode='video', quality='best', reply
         await target.reply_text(f"❌ <b>Download failed:</b>\n<code>{err_msg}</code>", quote=True)
 
     finally:
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+        # Cleanup both single files and lists
+        if file_path:
+            paths = file_path if isinstance(file_path, list) else [file_path]
+            for p in paths:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
