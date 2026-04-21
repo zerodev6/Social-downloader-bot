@@ -87,19 +87,34 @@ async def download_tiktok_photo(url: str) -> tuple:
 async def download_spotify(url: str) -> tuple:
     os.makedirs('downloads', exist_ok=True)
     output_dir = os.path.abspath("downloads")
-    cmd = ["spotdl", "download", url, "--output", f"{output_dir}/{{title}} - {{artist}}.{{output-ext}}"]
+    
+    # Give the output file a unique ID so we don't accidentally grab an old download
+    unique_id = int(time.time())
+    file_template = f"spotdl_{unique_id}_{{title}} - {{artist}}.{{output-ext}}"
+    
+    cmd = ["spotdl", "download", url, "--output", f"{output_dir}/{file_template}"]
     
     if _YT_COOKIE_FILE:
         cmd.extend(["--cookie-file", _YT_COOKIE_FILE])
     
     process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
-        files = glob.glob(f"{output_dir}/*.mp3")
+        # Increased timeout to 300 seconds (5 minutes) to give FFmpeg breathing room
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+        
+        # Search specifically for the file we just generated
+        files = glob.glob(f"{output_dir}/spotdl_{unique_id}_*.mp3")
         if not files:
-            raise Exception("Spotify download failed or timed out.")
+            # Capture the actual SpotDL error so you can see it in your logs
+            error_log = stderr.decode('utf-8').strip() or stdout.decode('utf-8').strip()
+            raise Exception(f"Spotify download failed. Log: {error_log[-200:]}")
+            
         newest_file = max(files, key=os.path.getctime)
         return newest_file, f"<b>🎧 Spotify</b> | 🎵 Download Complete\n\n<i>⚡ @ZeroDev_Bot</i>"
+        
+    except asyncio.TimeoutError:
+        if process: process.kill()
+        raise Exception("Spotify download timed out after 5 minutes. Try again later.")
     except Exception as e:
         if process: process.kill()
         raise e
@@ -117,20 +132,22 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
     os.makedirs('downloads', exist_ok=True)
     
     # --- SMART FORMAT SELECTOR ---
-    # This logic says: "Try to find the best video up to my requested height, 
-    # but if that specific height/codec combo fails, just give me the best available overall."
     if mode == 'mp3':
         format_str = 'bestaudio/best'
     else:
-        # Fallback logic: bestvideo[height<=720] + bestaudio OR just the best available video
-        format_str = f'bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<={quality}]/best'
+        if quality == 'best':
+            # Grab the best streams regardless of container, merge_output_format will make it mp4
+            format_str = 'bestvideo+bestaudio/best'
+        else:
+            # Filter by height, but don't restrict the native extension
+            format_str = f'bestvideo[height<={quality}]+bestaudio/best[height<={quality}]/best'
 
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'outtmpl': 'downloads/%(title).50s.%(ext)s',
         'format': format_str,
-        'merge_output_format': 'mp4',
+        'merge_output_format': 'mp4', # <-- FFmpeg handles the mp4 conversion safely here
         'geo_bypass': True,
         'nocheckcertificate': True,
     }
@@ -145,7 +162,7 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
     if _YT_COOKIE_FILE and is_youtube(url):
         ydl_opts['cookiefile'] = _YT_COOKIE_FILE
 
-    # Bypassing YouTube "Bot" restrictions
+    # Bypassing YouTube "Bot" restrictions via API clients
     if is_youtube(url):
         ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'web']}}
 
