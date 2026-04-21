@@ -6,25 +6,31 @@ import re
 import aiohttp
 import json
 import subprocess
+import glob
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COOKIES SETUP
+# COOKIES SETUP (BULLETPROOF METHOD)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _write_cookie_file(env_var: str, filename: str) -> str | None:
+def get_cookie_file(filename: str, env_var: str) -> str | None:
+    # 1. Look for a physical file in the root directory (Best & Most Reliable)
+    if os.path.exists(filename):
+        return os.path.abspath(filename)
+    
+    # 2. Fallback to Environment Variable if physical file isn't found
     content = os.environ.get(env_var, '').strip()
-    if not content:
+    if content:
+        os.makedirs('cookies', exist_ok=True)
         path = f'cookies/{filename}'
-        return path if os.path.exists(path) else None
-    os.makedirs('cookies', exist_ok=True)
-    path = f'cookies/{filename}'
-    with open(path, 'w') as f:
-        if not content.startswith('# Netscape'):
-            f.write('# Netscape HTTP Cookie File\n')
-        f.write(content)
-    return path
+        with open(path, 'w') as f:
+            if not content.startswith('# Netscape'):
+                f.write('# Netscape HTTP Cookie File\n')
+            f.write(content)
+        return os.path.abspath(path)
+    
+    return None
 
-_YT_COOKIE_FILE = _write_cookie_file('YOUTUBE_COOKIES', 'youtube.txt')
+_YT_COOKIE_FILE = get_cookie_file('youtube.txt', 'YOUTUBE_COOKIES')
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PLATFORM DETECTION
@@ -43,7 +49,7 @@ def is_facebook(url: str) -> bool:
     return any(x in url.lower() for x in ['facebook.com', 'fb.com', 'fb.watch'])
 
 def is_spotify(url: str) -> bool:
-    return 'spotify.com' in url.lower()
+    return 'spotify.com' in url.lower() or 'spotify.com' in url.lower()
 
 def is_pinterest(url: str) -> bool:
     return any(x in url.lower() for x in ['pinterest.com', 'pin.it'])
@@ -75,7 +81,7 @@ async def download_tiktok_photo(url: str) -> tuple:
 
     downloaded = []
     async with aiohttp.ClientSession(headers=headers) as session:
-        for i, img_url in enumerate(list(set(image_urls))[:10]): # Limit to 10
+        for i, img_url in enumerate(list(set(image_urls))[:10]):
             path = os.path.abspath(f"downloads/tt_{int(time.time())}_{i}.jpg")
             async with session.get(img_url) as r:
                 if r.status == 200:
@@ -87,13 +93,16 @@ async def download_tiktok_photo(url: str) -> tuple:
 
 async def download_spotify(url: str) -> tuple:
     os.makedirs('downloads', exist_ok=True)
-    # Using spotdl via subprocess with a longer timeout and cookie support if possible
-    # Note: spotdl uses yt-dlp internally, so it's sensitive to IP bans
     output_dir = os.path.abspath("downloads")
+    
+    # Pass the cookie file to spotdl so it doesn't get blocked by YouTube
     cmd = [
         "spotdl", "download", url,
         "--output", f"{output_dir}/{{title}} - {{artist}}.{{output-ext}}"
     ]
+    
+    if _YT_COOKIE_FILE:
+        cmd.extend(["--cookie-file", _YT_COOKIE_FILE])
     
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -104,9 +113,8 @@ async def download_spotify(url: str) -> tuple:
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
         if process.returncode != 0:
-            raise Exception(stderr.decode())
+            raise Exception(stderr.decode('utf-8', errors='ignore'))
             
-        # Find the downloaded file
         files = glob.glob(f"{output_dir}/*.mp3")
         if not files:
             raise Exception("File downloaded but not found.")
@@ -147,10 +155,10 @@ async def download_media(url: str, mode: str = 'video', quality: str = 'best') -
             'preferredquality': '192',
         }]
 
+    # Attach cookies to standard yt-dlp downloads
     if _YT_COOKIE_FILE and is_youtube(url):
         ydl_opts['cookiefile'] = _YT_COOKIE_FILE
 
-    # Hardening against YouTube bot detection
     if is_youtube(url):
         ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'web']}}
 
